@@ -30,14 +30,13 @@ class PermutationCipher:
 import nltk
 nltk.download("words")
 
+from nltk.corpus import words
+
+
 class EnglishScorer:
     def __init__(self):
-        # A small English dictionary (expandable)
-        self.english_words = {
-            "the", "and", "have", "that", "for", "you",
-            "with", "not", "this", "but", "his", "from",
-            "they", "say", "her", "she", "will", "one"
-        }
+        # Load the full English dictionary from NLTK
+        self.english_words = set(w.lower() for w in words.words())
 
         # Most common English bigrams
         self.english_bigrams = [
@@ -47,17 +46,16 @@ class EnglishScorer:
 
     def score(self, text):
         score = 0
+        text = text.lower()
 
-        # Reward common words
-        words = text.lower().split()
-        for w in words:
+        # Reward common English words
+        for w in text.split():
             if w in self.english_words:
                 score += 5
 
-        # Reward English bigrams
-        for i in range(len(text)-1):
-            pair = text[i:i+2].lower()
-            if pair in self.english_bigrams:
+        # Reward common bigrams
+        for i in range(len(text) - 1):
+            if text[i:i+2] in self.english_bigrams:
                 score += 1
 
         return score
@@ -151,18 +149,3 @@ class GeneticBreaker:
         return best_key, best_plain, best_score
 
 
-if __name__ == "__main__":
-    key = [3,1,4,2]
-    cipher = PermutationCipher(key)
-
-    message = "this is a test message for the cipher breaker"
-    encrypted = cipher.encrypt(message.replace(" ", ""))
-
-    print("Encrypted:", encrypted)
-
-    scorer = EnglishScorer()
-
-    # found_key, plaintext, score = breaker.break_cipher(encrypted)
-    # print("Found key:", found_key)
-    # print("Decrypted guess:", plaintext)
-    # print("Score:", score)
