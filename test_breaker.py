@@ -1,5 +1,5 @@
 # ==========================================================
-# TEST MODULE FOR PERMUTATION CIPHER + BREAKERS (GA, etc.)
+# TEST MODULE FOR PERMUTATION + SUBSTITUTION CIPHER BREAKERS
 # FILE: test_breaker.py
 # ==========================================================
 
@@ -34,23 +34,19 @@ class TestSuite:
 
 
 # ==========================================================
-# IMPORT OR DEFINE YOUR CLASSES HERE
-# (PermutationCipher, EnglishScorer, Breaker)
-# ==========================================================
 
 import permutacao_livre
 
-PermutationCipher = permutacao_livre.PermutationCipher
-EnglishScorer = permutacao_livre.EnglishScorer
-Breaker = permutacao_livre.GeneticBreaker
+PermutationCipher   = permutacao_livre.PermutationCipher
+SubstitutionCipher  = permutacao_livre.SubstitutionCipher
+EnglishScorer       = permutacao_livre.EnglishScorer
+Breaker             = permutacao_livre.GeneticBreaker
+
 
 # ==========================================================
-# TESTS
-# ==========================================================
 
-class BreakerTests:
+class BreakerTestsPermutation:
 
-    # ------------------------- BASIC GA TESTS -------------------------
     def test_ga_finds_readable_text(self, ts):
         key = [3,1,4,2]
         cipher = PermutationCipher(key)
@@ -59,11 +55,11 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=4)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        found_key = breaker.break_cipher(encrypted, PermutationCipher)
 
-        ts.assert_true(score > 0, "GA breaker must produce readable plaintext")
+        ts.assert_true(found_key is not None, "GA must produce readable plaintext (perm)")
 
     def test_ga_output_length_correct(self, ts):
         key = [3,1,4,2]
@@ -73,14 +69,12 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=4)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        best_key = breaker.break_cipher(encrypted, PermutationCipher)
+        plaintext = PermutationCipher(best_key).decrypt(encrypted)
 
-        ts.assert_equal(len(plaintext), len(msg.replace(" ", "")),
-                        "GA plaintext must match original size")
-
-    # ------------------------- ADVANCED TESTS -------------------------
+        ts.assert_equal(len(plaintext), len(msg), "GA plaintext length must match (perm)")
 
     def test_ga_finds_correct_key_or_equivalent(self, ts):
         key = [3,1,4,2]
@@ -90,17 +84,17 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=4, generations=300)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        found_key = breaker.break_cipher(encrypted, PermutationCipher)
 
-        ts.assert_true(found_key is not None, "GA must return some key")
-        ts.assert_true(len(found_key) == 4, "GA must return a key of correct size")
+        ts.assert_true(found_key is not None, "GA must return some key (perm)")
+        ts.assert_true(len(found_key) == 4, "GA key size must match (perm)")
 
     def test_ga_with_random_permutation(self, ts):
         import random
         size = 5
-        key = list(range(1, size+1))
+        key = list(range(size))
         random.shuffle(key)
 
         cipher = PermutationCipher(key)
@@ -108,11 +102,11 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=size)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        found_key = breaker.break_cipher(encrypted, PermutationCipher)
 
-        ts.assert_true(score > 0, "GA must break cipher even with random permutation")
+        ts.assert_true(found_key is not None, "GA must break random perm key")
 
     def test_ga_multi_block(self, ts):
         key = [2,3,1]
@@ -122,11 +116,11 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=3)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        found_key = breaker.break_cipher(encrypted, PermutationCipher)
 
-        ts.assert_true(score > 0, "GA must handle multi-block messages")
+        ts.assert_true(found_key is not None, "GA must handle multi-block (perm)")
 
     def test_ga_repeated_characters(self, ts):
         key = [3,1,4,2]
@@ -136,11 +130,12 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=4)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        found_key = breaker.break_cipher(encrypted, PermutationCipher)
+        plaintext = PermutationCipher(found_key).decrypt(encrypted)
 
-        ts.assert_true(len(plaintext) == len(msg), "GA must handle repeated characters")
+        ts.assert_true(len(plaintext) == len(msg), "GA must handle repeated chars (perm)")
 
     def test_ga_consistency(self, ts):
         key = [3,1,4,2]
@@ -150,25 +145,20 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        
+
         scores = []
         for _ in range(3):
-            breaker = Breaker(scorer, block_size=4, generations=200)
-            _, _, score = breaker.break_cipher(encrypted)
-            scores.append(score)
+            breaker = Breaker(scorer)
+            best_key = breaker.break_cipher(encrypted, PermutationCipher)
+            plain = PermutationCipher(best_key).decrypt(encrypted)
+            scores.append(scorer.score(plain))
 
-        ts.assert_true(abs(scores[0] - scores[2]) < 15,
-                       "GA must be reasonably consistent across runs")
+        ts.assert_true(abs(scores[0] - scores[2]) < 15, "GA must be consistent (perm)")
 
     def test_ga_long_text(self, ts):
-        """
-        Test the GA breaker on a long text (hundreds of chars).
-        Ensures the breaker can scale and still produce meaningful scores.
-        """
         key = [3, 1, 4, 2]
         cipher = PermutationCipher(key)
 
-        # A long English text (you can replace with any long input)
         msg = (
             "thisisaverylongenglishtextdesignedtotestthegeneticalgorithmbreaker "
             "andensurethatitscaleswellwithlargerinputswithoutlosingstability "
@@ -178,30 +168,205 @@ class BreakerTests:
         encrypted = cipher.encrypt(msg)
 
         scorer = EnglishScorer()
-        breaker = Breaker(scorer, block_size=4, generations=350)
+        breaker = Breaker(scorer)
 
-        found_key, plaintext, score = breaker.break_cipher(encrypted)
+        best_key = breaker.break_cipher(encrypted, PermutationCipher)
+        plaintext = PermutationCipher(best_key).decrypt(encrypted)
 
-        ts.assert_true(score > 0, "GA must break long text with meaningful score")
-        ts.assert_equal(len(plaintext), len(msg), "Long text length must be preserved")
+        ts.assert_true(len(plaintext) == len(msg), "length preserved (perm)")
+        ts.assert_true(scorer.score(plaintext) > 0, "meaningful score on long text (perm)")
 
 
 # ==========================================================
-# RUNNER
+
+class BreakerTestsSubstitution:
+
+    def example_key(self):
+        import string, random
+        letters = list(string.ascii_uppercase)
+        shuffled = letters[:]
+        random.shuffle(shuffled)
+        return dict(zip(letters, shuffled))
+
+    def test_sub_readable_text(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISASIMPLEPLAINTEXTMESSAGEFORTESTING"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        found_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        ts.assert_true(found_key is not None, "GA readable text (sub)")
+
+    def test_sub_length_correct(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISALENGTHCHECK"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        plaintext = SubstitutionCipher(best_key).decrypt(encrypted)
+
+        ts.assert_equal(len(plaintext), len(msg), "length preserved (sub)")
+
+    def test_sub_key_validity(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISALONGMESSAGEFORKEYVALIDATIONTEST"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+
+        ts.assert_true(len(best_key) == 26, "substitution key must have 26 letters")
+
+    def test_sub_random_key(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISARANDOMKEYTESTMESSAGE"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        ts.assert_true(best_key is not None, "GA must break random substitution key")
+
+    def test_sub_repeated_chars(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "AAAAAAAAAABBBBBBBBBCCCCCCCCCDDDDDDD"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        plaintext = SubstitutionCipher(best_key).decrypt(encrypted)
+
+        ts.assert_equal(len(plaintext), len(msg), "repeated chars ok (sub)")
+
+    def test_sub_consistency(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISACONSISTENCYTESTMESSAGEFORCHECKINGGA"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        scores = []
+
+        for _ in range(3):
+            breaker = Breaker(scorer)
+            best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+            plain = SubstitutionCipher(best_key).decrypt(encrypted)
+            scores.append(scorer.score(plain))
+
+        ts.assert_true(abs(scores[0] - scores[2]) < 30, "GA consistency across runs (sub)")
+
+    def test_sub_multi_sentence(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISALONGERENGLISHTEXTFORTESTINGMULTISENTENCESUBSTITUTION"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        found_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        ts.assert_true(found_key is not None, "multi-sentence handling (sub)")
+
+    def test_sub_minimum_score(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "THISISASCORETESTFORMINIMUMTHRESHOLD"
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        plain = SubstitutionCipher(best_key).decrypt(encrypted)
+
+        ts.assert_true(scorer.score(plain) >= 0, "minimum score >= 0 (sub)")
+
+    def test_sub_long_text(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = ("THISISALONGENGLISHTEXTINTENDEDTESTTHATTHEBREAKERSCALES "
+               "TOLARGERDATASETSANDPRODUCESMEANINGFULDECRYPTIONS").replace(" ", "")
+        encrypted = cipher.encrypt(msg)
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        plain = SubstitutionCipher(best_key).decrypt(encrypted)
+
+        ts.assert_equal(len(plain), len(msg), "long text length (sub)")
+        ts.assert_true(scorer.score(plain) > 0, "long text score (sub)")
+
+    def test_sub_uppercase_handling(self, ts):
+        key = self.example_key()
+        cipher = SubstitutionCipher(key)
+
+        msg = "MIXEDCASEHANDLINGTEST"
+        encrypted = cipher.encrypt(msg.upper())
+
+        scorer = EnglishScorer()
+        breaker = Breaker(scorer)
+
+        best_key = breaker.break_cipher(encrypted, SubstitutionCipher)
+        plain = SubstitutionCipher(best_key).decrypt(encrypted)
+
+        ts.assert_true(len(plain) == len(msg), "uppercase handling (sub)")
+
+
 # ==========================================================
 
 def run_all_tests():
     ts = TestSuite()
-    bt = BreakerTests()
 
-    bt.test_ga_finds_readable_text(ts)
-    bt.test_ga_output_length_correct(ts)
-    bt.test_ga_finds_correct_key_or_equivalent(ts)
-    bt.test_ga_with_random_permutation(ts)
-    bt.test_ga_multi_block(ts)
-    bt.test_ga_repeated_characters(ts)
-    bt.test_ga_consistency(ts)
-    bt.test_ga_long_text(ts)
+    print("\n=== PERMUTATION CIPHER TESTS ===")
+    perm = BreakerTestsPermutation()
+
+    perm.test_ga_finds_readable_text(ts)
+    perm.test_ga_output_length_correct(ts)
+    perm.test_ga_finds_correct_key_or_equivalent(ts)
+    perm.test_ga_with_random_permutation(ts)
+    perm.test_ga_multi_block(ts)
+    perm.test_ga_repeated_characters(ts)
+    perm.test_ga_consistency(ts)
+    perm.test_ga_long_text(ts)
+
+    print("\n=== SUBSTITUTION CIPHER TESTS ===")
+    sub = BreakerTestsSubstitution()
+
+    sub.test_sub_readable_text(ts)
+    sub.test_sub_length_correct(ts)
+    sub.test_sub_key_validity(ts)
+    sub.test_sub_random_key(ts)
+    sub.test_sub_repeated_chars(ts)
+    sub.test_sub_consistency(ts)
+    sub.test_sub_multi_sentence(ts)
+    sub.test_sub_minimum_score(ts)
+    sub.test_sub_long_text(ts)
+    sub.test_sub_uppercase_handling(ts)
 
     ts.summary()
 

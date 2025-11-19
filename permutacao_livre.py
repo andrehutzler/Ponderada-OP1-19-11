@@ -1,151 +1,191 @@
-class PermutationCipher:
-    def __init__(self, key):
-        self.key = key                  # e.g. [3,1,4,2]
-        self.inverse_key = self._invert_key(key)
-
-    def _invert_key(self, key):
-        inv = [0] * len(key)
-        for i, k in enumerate(key):
-            inv[k-1] = i+1
-        return inv
-
-    def encrypt_block(self, block):
-        if len(block) != len(self.key):
-            return block
-        return ''.join(block[self.key[i]-1] for i in range(len(block)))
-
-    def decrypt_block(self, block):
-        if len(block) != len(self.inverse_key):
-            return block
-        return ''.join(block[self.inverse_key[i]-1] for i in range(len(block)))
-
-    def encrypt(self, text):
-        size = len(self.key)
-        return ''.join(self.encrypt_block(text[i:i+size]) for i in range(0, len(text), size))
-
-    def decrypt(self, text):
-        size = len(self.key)
-        return ''.join(self.decrypt_block(text[i:i+size]) for i in range(0, len(text), size))
-
+import random
 import nltk
-nltk.download("words")
 
-from nltk.corpus import words
+try:
+    nltk.data.find("corpora/words")
+except LookupError:
+    nltk.download("words")
+
+from nltk.corpus import words as nltk_words
 
 
 class EnglishScorer:
     def __init__(self):
-        # Load the full English dictionary from NLTK
-        self.english_words = set(w.lower() for w in words.words())
-
-        # Most common English bigrams
+        self.english_words = set(w.lower() for w in nltk_words.words())
         self.english_bigrams = [
-            "th", "he", "in", "er", "an", "re", "on", "at", "en", "nd",
-            "ti", "es", "or", "te", "of", "ed", "is", "it", "al"
+            "th","he","in","er","an","re","on","at","en","nd",
+            "ti","es","or","te","of","ed","is","it","al"
         ]
 
     def score(self, text):
         score = 0
         text = text.lower()
-
-        # Reward common English words
         for w in text.split():
             if w in self.english_words:
                 score += 5
-
-        # Reward common bigrams
-        for i in range(len(text) - 1):
+        for i in range(len(text)-1):
             if text[i:i+2] in self.english_bigrams:
                 score += 1
-
         return score
 
-import random
+
+class PermutationCipher:
+    def __init__(self, key):
+        self.key = self._normalize_key(list(key))
+
+    def _normalize_key(self, key):
+        n = len(key)
+        if any(k >= n or k < 0 for k in key):
+            try:
+                key1 = [int(k) for k in key]
+            except Exception:
+                return key
+            if max(key1) == n:
+                return [k-1 for k in key1]
+            else:
+                return key1
+        return key
+
+    def encrypt(self, plaintext):
+        n = len(self.key)
+        blocks = [plaintext[i:i+n] for i in range(0, len(plaintext), n)]
+        encrypted = ""
+        for block in blocks:
+            if len(block) < n:
+                block = block.ljust(n)
+            encrypted += "".join(block[self.key[i]] for i in range(n))
+        return encrypted
+
+    def decrypt(self, ciphertext):
+        n = len(self.key)
+        inverse = [0] * n
+        for i, k in enumerate(self.key):
+            inverse[k] = i
+        blocks = [ciphertext[i:i+n] for i in range(0, len(ciphertext), n)]
+        decrypted = ""
+        for block in blocks:
+            if len(block) < n:
+                block = block.ljust(n)
+            decrypted += "".join(block[inverse[i]] for i in range(n))
+        return decrypted.rstrip()
+
+
+class SubstitutionCipher:
+    def __init__(self, key):
+        self.key = {k.upper(): v.upper() for k, v in key.items()}
+        self.inverse_key = {v: k for k, v in self.key.items()}
+
+    def encrypt(self, plaintext):
+        result = []
+        for c in plaintext.upper():
+            result.append(self.key.get(c, c))
+        return "".join(result)
+
+    def decrypt(self, ciphertext):
+        result = []
+        for c in ciphertext.upper():
+            result.append(self.inverse_key.get(c, c))
+        return "".join(result)
+
 
 class GeneticBreaker:
-    def __init__(self, scorer, block_size, population_size=50, mutation_rate=0.1, generations=200):
+    def __init__(self, scorer, population_size=200, mutation_rate=0.1, generations=300):
         self.scorer = scorer
-        self.block_size = block_size
         self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.generations = generations
 
-    def random_key(self):
-        arr = list(range(1, self.block_size + 1))
-        random.shuffle(arr)
-        return arr
+    def detect_permutation_block_size(self, ciphertext):
+        best_size = 2
+        best_repeats = -1
+        for size in range(2, min(40, max(13, len(ciphertext)//2 + 1))):
+            if size <= 0:
+                continue
+            blocks = [ciphertext[i:i+size] for i in range(0, len(ciphertext), size)]
+            repeats = len(blocks) - len(set(blocks))
+            if repeats > best_repeats:
+                best_repeats = repeats
+                best_size = size
+        return best_size
 
-    def fitness(self, key, ciphertext):
-        cipher = PermutationCipher(key)
-        decrypted = cipher.decrypt(ciphertext)
-        return self.scorer.score(decrypted), decrypted
+    def generate_random_key(self, cipher_type, key_size=None):
+        if cipher_type == "permutation":
+            key = list(range(key_size))
+            random.shuffle(key)
+            return key
+        elif cipher_type == "substitution":
+            letters = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            shuffled = letters[:]
+            random.shuffle(shuffled)
+            return dict(zip(letters, shuffled))
 
-    def tournament_selection(self, population, scores, k=3):
-        best = None
-        best_score = -1e9
-        for _ in range(k):
-            idx = random.randint(0, len(population)-1)
-            if scores[idx] > best_score:
-                best_score = scores[idx]
-                best = population[idx]
-        return best
-
-    def crossover(self, parent1, parent2):
-        size = len(parent1)
-        a, b = sorted(random.sample(range(size), 2))
-
-        child = [None] * size
-        child[a:b] = parent1[a:b]
-
-        fill = [g for g in parent2 if g not in child]
-        
-        idx = 0
-        for i in range(size):
-            if child[i] is None:
-                child[i] = fill[idx]
-                idx += 1
-
-        return child
-
-    def mutate(self, key):
-        if random.random() < self.mutation_rate:
+    def mutate(self, key, cipher_type):
+        if cipher_type == "permutation":
             a, b = random.sample(range(len(key)), 2)
             key[a], key[b] = key[b], key[a]
+        elif cipher_type == "substitution":
+            a, b = random.sample(list(key.keys()), 2)
+            key[a], key[b] = key[b], key[a]
+        return key
 
-    def break_cipher(self, ciphertext):
+    def crossover(self, k1, k2, cipher_type):
+        if cipher_type == "permutation":
+            size = len(k1)
+            a, b = sorted(random.sample(range(size), 2))
+            child = [-1] * size
+            child[a:b+1] = k1[a:b+1]
+            fill = [x for x in k2 if x not in child]
+            idx = 0
+            for i in range(size):
+                if child[i] == -1:
+                    child[i] = fill[idx]
+                    idx += 1
+            return child
+        elif cipher_type == "substitution":
+            letters = list(k1.keys())
+            size = len(letters)
+            a, b = sorted(random.sample(range(size), 2))
+            child = {}
+            for i in range(a, b+1):
+                child[letters[i]] = k1[letters[i]]
+            used = set(child.values())
+            for l in letters:
+                if l not in child:
+                    for cand in [k2[l]] + letters:
+                        if cand not in used:
+                            child[l] = cand
+                            used.add(cand)
+                            break
+            return child
 
-        population = [self.random_key() for _ in range(self.population_size)]
-
+    def break_cipher(self, ciphertext, cipher_class):
+        cipher_type = "substitution" if cipher_class == SubstitutionCipher else "permutation"
+        if cipher_type == "permutation":
+            key_size = self.detect_permutation_block_size(ciphertext)
+        else:
+            key_size = None
+        population = [self.generate_random_key(cipher_type, key_size) for _ in range(self.population_size)]
         best_key = None
-        best_plain = None
-        best_score = -1e9
-
-        for gen in range(self.generations):
-            scores = []
-            plaintexts = []
-
+        best_score = float("-inf")
+        elite_size = max(2, self.population_size // 10)
+        for _ in range(self.generations):
+            scored = []
             for key in population:
-                score, plain = self.fitness(key, ciphertext)
-                scores.append(score)
-                plaintexts.append(plain)
-
-                if score > best_score:
-                    best_score = score
-                    best_key = key[:]
-                    best_plain = plain
-
-            new_pop = []
-
-            for _ in range(self.population_size):
-                p1 = self.tournament_selection(population, scores)
-                p2 = self.tournament_selection(population, scores)
-
-                child = self.crossover(p1, p2)
-                self.mutate(child)
-                new_pop.append(child)
-
-            population = new_pop
-
-        return best_key, best_plain, best_score
-
-
+                cipher = cipher_class(key)
+                decrypted = cipher.decrypt(ciphertext)
+                score = self.scorer.score(decrypted)
+                scored.append((score, key, decrypted))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            if scored and scored[0][0] > best_score:
+                best_score = scored[0][0]
+                best_key = scored[0][1]
+            elite = [k for _, k, _ in scored[:elite_size]]
+            new_population = elite[:]
+            while len(new_population) < self.population_size:
+                parent1, parent2 = random.sample(elite, 2)
+                child = self.crossover(parent1, parent2, cipher_type)
+                if random.random() < self.mutation_rate:
+                    child = self.mutate(child, cipher_type)
+                new_population.append(child)
+            population = new_population
+        return best_key
